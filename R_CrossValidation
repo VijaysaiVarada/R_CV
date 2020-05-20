@@ -1,0 +1,74 @@
+#CV
+
+library(tidyverse)
+library(broom)
+library(data.table)
+#1
+seed = 84397893
+set.seed(seed) 
+
+data(airquality)
+airquality = as.data.table(airquality)
+airquality = airquality[complete.cases(airquality), ]
+
+
+airquality$Day = NULL
+
+raw = airquality 
+
+raw$Month = as.factor(raw$Month) 
+
+n <- nrow(raw)
+
+#formula
+fmla = Ozone ~ .
+
+#ols
+model <- lm(fmla,data=raw) 
+
+base.fitted = model$fitted.values
+
+base.resid <- model$residuals 
+
+#CV
+set.seed(seed) 
+frac <- 0.10
+tst <- sample(n,ceiling(frac*n))
+
+m1   <- lm(fmla,data=raw[-tst,]) 
+cv.fitted   <- predict(m1,raw[tst,]) 
+r1  <- raw$Ozone[tst]-cv.fitted  # residuals
+
+cv.resid     <- data.table(loc = tst,
+                           diff = r1)  
+
+
+fitPred <- function(training,testing,i) {
+  m <- lm(fmla,data=training) 
+  y <- testing$Ozone  
+  p <- predict(m,testing)    
+  r <- y - p             
+  return(data.table(loc=i,diff=r,y=y,yhat=p))
+}
+#LOOCV
+c2  <- data.table(group=1:n, testing=1:n)  # control structure
+
+
+jk.resid <- c2[,fitPred(raw[-testing,],raw[testing,],testing),by=.(group)] 
+jk.resid[ ,c(1,4,5)] <- list(NULL)
+
+#K-Fold
+k     <- 10
+t       <- rep(1:k,ceiling(n/k))[1:n]  
+
+set.seed(seed)
+kf.tst <- data.table(k=t ,idx=sample(n)) #control structure for K-fold;
+kf.resid  <- kf.tst[,fitPred(raw[-idx,],raw[idx,],idx),by=.(k)]
+kf.resid[ ,c(1,4,5)] <- list(NULL)
+
+ 
+sum(abs(cv.resid[,2])) 
+sum(abs(kf.resid[,2]))/10  # mean cv (divided by 10 as it is a 10 fold cv)
+
+#for simple cv (1 fold or single train test split) sum of abs values of residuals for 12 obs is 250 
+#for 10 fold cv mean abs value of residuals = 181.31 
